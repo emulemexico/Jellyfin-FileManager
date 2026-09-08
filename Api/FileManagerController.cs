@@ -166,6 +166,40 @@ public sealed class FileManagerController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Downloads a directory as a zip archive.
+    /// </summary>
+    [HttpGet("DownloadDirectory")]
+    [Produces("application/zip")]
+    public IActionResult DownloadDirectory([FromQuery] string path)
+    {
+        try
+        {
+            var safePath = _service.ResolveAccessiblePath(path, mustExist: true, requireDirectory: true);
+            var dirName = Path.GetFileName(safePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrWhiteSpace(dirName))
+            {
+                dirName = "archive";
+            }
+
+            var tempZip = Path.Combine(Path.GetTempPath(), $"jellyfin_fm_{Guid.NewGuid():N}.zip");
+            System.IO.Compression.ZipFile.CreateFromDirectory(safePath, tempZip);
+
+            var stream = new FileStream(tempZip, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.DeleteOnClose);
+            return File(stream, "application/zip", $"{dirName}.zip");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new OperationResult(false, ex.Message));
+        }
+        catch (Exception ex) when (ex is ArgumentException
+                                   or InvalidOperationException
+                                   or IOException)
+        {
+            return BadRequest(new OperationResult(false, ex.Message));
+        }
+    }
+
     private ActionResult<T> Execute<T>(Func<T> action)
     {
         try

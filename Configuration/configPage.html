@@ -144,17 +144,18 @@
             </div>
 
             <div style="display:flex;flex-wrap:wrap;gap:.5em;margin:1em 0;">
-                <button id="fmUp" type="button" is="emby-button" class="raised emby-button">⬆ Subir</button>
+                <button id="fmUp" type="button" is="emby-button" class="raised emby-button">⬆ Subir nivel</button>
                 <button id="fmRefresh" type="button" is="emby-button" class="raised emby-button">↻ Actualizar</button>
                 <button id="fmNewFolder" type="button" is="emby-button" class="raised emby-button">＋ Carpeta</button>
                 <button id="fmUploadBtn" type="button" is="emby-button" class="raised emby-button">⤒ Subir archivo</button>
+                <button id="fmDownloadFolderBtn" type="button" is="emby-button" class="raised emby-button">⬇ Descargar carpeta (ZIP)</button>
                 <input id="fmUploadInput" type="file" multiple hidden>
             </div>
 
             <div id="fmStatus" class="fieldDescription" style="margin:.75em 0;"></div>
 
-            <div style="overflow:auto;">
-                <table style="width:100%;border-collapse:collapse;">
+            <div style="overflow-x:auto;margin-top:1em;border-radius:4px;">
+                <table style="width:100%;border-collapse:collapse;min-width:650px;">
                     <thead>
                     <tr>
                         <th style="text-align:left;padding:.7em;">Nombre</th>
@@ -283,8 +284,12 @@
             actionsTd.style.textAlign = 'right';
             actionsTd.style.whiteSpace = 'nowrap';
 
-            if (!item.IsDirectory) {
-                const download = button('⬇', 'Descargar');
+            if (item.IsDirectory) {
+                const downloadZip = button('⬇ ZIP', 'Descargar carpeta como ZIP');
+                downloadZip.addEventListener('click', () => downloadDirectory(item.Path));
+                actionsTd.appendChild(downloadZip);
+            } else {
+                const download = button('⬇', 'Descargar archivo');
                 download.addEventListener('click', () => downloadFile(item.Path));
                 actionsTd.appendChild(download);
             }
@@ -487,35 +492,36 @@
         }
     }
 
-    async function downloadFile(path) {
+    function downloadFile(filePath) {
         try {
-            Dashboard.showLoadingMsg();
-
-            const headers = typeof ApiClient.getDefaultHeaders === 'function'
-                ? ApiClient.getDefaultHeaders()
-                : {};
-
-            const response = await fetch(apiUrl('FileManager/Download', { path: path }), {
-                method: 'GET',
-                headers: headers
-            });
-
-            if (!response.ok) throw new Error('HTTP ' + response.status);
-
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
+            const token = typeof ApiClient.accessToken === 'function' ? ApiClient.accessToken() : '';
+            const downloadUrl = apiUrl('FileManager/Download', { path: filePath, api_key: token });
             const a = document.createElement('a');
-            a.href = url;
-            a.download = path.split(/[\\/]/).pop();
+            a.href = downloadUrl;
+            a.download = filePath.split(/[\\/]/).pop() || 'download';
             document.body.appendChild(a);
             a.click();
             a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 30000);
         } catch (err) {
             console.error(err);
-            alert('No se pudo descargar el archivo.');
-        } finally {
-            Dashboard.hideLoadingMsg();
+            alert('No se pudo iniciar la descarga: ' + err.message);
+        }
+    }
+
+    function downloadDirectory(dirPath) {
+        try {
+            const token = typeof ApiClient.accessToken === 'function' ? ApiClient.accessToken() : '';
+            const downloadUrl = apiUrl('FileManager/DownloadDirectory', { path: dirPath, api_key: token });
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            const name = dirPath.split(/[\\/]/).filter(Boolean).pop() || 'carpeta';
+            a.download = name + '.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo descargar la carpeta: ' + err.message);
         }
     }
 
@@ -588,6 +594,9 @@
     $('#fmNewFolder').addEventListener('click', createFolder);
     $('#fmUploadBtn').addEventListener('click', () => $('#fmUploadInput').click());
     $('#fmUploadInput').addEventListener('change', e => uploadFiles(e.target.files));
+    $('#fmDownloadFolderBtn').addEventListener('click', () => {
+        if (currentPath) downloadDirectory(currentPath);
+    });
 
     page.addEventListener('pageshow', initialize);
     initialize();
