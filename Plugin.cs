@@ -48,7 +48,10 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         yield return new PluginPageInfo
         {
             Name = "filemanager",
+            DisplayName = "File Manager",
             EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
+            MenuSection = "server",
+            MenuIcon = "folder",
             EnableInMainMenu = true
         };
     }

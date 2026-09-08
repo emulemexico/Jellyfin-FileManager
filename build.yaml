@@ -1,7 +1,7 @@
 ﻿---
 name: "File Manager"
 guid: "f4217828-0ed8-4d2e-a3cd-6dc74806f716"
-version: "10.11.0.2"
+version: "10.11.0.3"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 owner: "emulemexico"
@@ -13,3 +13,4 @@ artifacts:
   - "Jellyfin.Plugin.FileManager.dll"
 changelog: >
   Primera versión pública con acceso completo al filesystem visible para Jellyfin.
+
