@@ -153,7 +153,7 @@ gh release create "v$Version" $zipPath --title "File Manager $Version" --notes "
 Write-Host "Verificando disponibilidad del asset en GitHub..."
 Start-Sleep -Seconds 3
 try {
-    $resp = Invoke-WebRequest -Uri $sourceUrl -Method Head -MaximumRedirection 5 -UserAgent "PowerShell-ReleaseCheck"
+    $resp = Invoke-WebRequest -Uri $sourceUrl -Method Head -MaximumRedirection 5 -TimeoutSec 5 -UserAgent "PowerShell-ReleaseCheck" -ErrorAction Stop
     if ($resp.StatusCode -eq 200) {
         Write-Host "Verificación exitosa: $sourceUrl responde HTTP 200." -ForegroundColor Green
     } else {

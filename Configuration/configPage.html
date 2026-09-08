@@ -10,6 +10,50 @@
      class="page type-interior pluginConfigurationPage"
      data-require="emby-button,emby-input,emby-checkbox">
 
+    <style>
+        .fm-item-btn {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: inherit !important;
+            font: inherit !important;
+            font-size: 0.95em !important;
+            text-align: left !important;
+            cursor: pointer !important;
+            padding: 0.4em 0.6em !important;
+            border-radius: 4px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 0.5em !important;
+            max-width: 100% !important;
+            word-break: break-word !important;
+            transition: background-color 0.15s ease-in-out !important;
+        }
+        .fm-item-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            color: #fff !important;
+        }
+        .fm-action-btn {
+            background: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            box-shadow: none !important;
+            color: inherit !important;
+            border-radius: 4px !important;
+            padding: 0.35em 0.65em !important;
+            margin-left: 0.3em !important;
+            cursor: pointer !important;
+            font-size: 0.9em !important;
+            transition: background-color 0.15s ease-in-out !important;
+        }
+        .fm-action-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+        #fmRows tr:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+    </style>
+
     <div data-role="content">
         <div class="content-primary">
 
@@ -193,11 +237,9 @@
     function button(text, title) {
         const b = document.createElement('button');
         b.type = 'button';
-        b.setAttribute('is', 'emby-button');
-        b.className = 'emby-button';
+        b.className = 'fm-action-btn';
         b.textContent = text;
         b.title = title;
-        b.style.marginLeft = '.25em';
         return b;
     }
 
@@ -215,10 +257,7 @@
 
             const open = document.createElement('button');
             open.type = 'button';
-            open.setAttribute('is', 'emby-button');
-            open.className = 'emby-button';
-            open.style.textAlign = 'left';
-            open.style.maxWidth = '100%';
+            open.className = 'fm-item-btn';
             open.textContent = fileIcon(item) + '  ' + item.Name;
             open.title = item.Path;
 
