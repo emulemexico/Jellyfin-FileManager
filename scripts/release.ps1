@@ -122,6 +122,11 @@ $existingVersions = @($pluginEntry.versions | Where-Object { $_.version -ne $Ver
 $pluginEntry.versions = @($newVersionObj) + $existingVersions
 $pluginEntry.owner = $owner
 
+$updatedJson = @($manifestJson) | ConvertTo-Json -Depth 10
+if (-not $updatedJson.Trim().StartsWith("[")) {
+    $updatedJson = "[`n$updatedJson`n]"
+}
+
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($manifestPath, $updatedJson, $utf8NoBom)
 
