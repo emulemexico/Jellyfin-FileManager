@@ -1,0 +1,34 @@
+name: Validate Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Validate manifest.json integrity
+        run: |
+          python3 -c "
+          import json, sys
+          manifest = json.load(open('manifest.json'))
+          assert len(manifest) > 0, 'Manifest cannot be empty'
+          plugin = manifest[0]
+          assert plugin['guid'] == 'f4217828-0ed8-4d2e-a3cd-6dc74806f716', 'GUID mismatch'
+          assert len(plugin['versions']) > 0, 'No versions found'
+          latest = plugin['versions'][0]
+          print(f'Latest manifest version: {latest[\"version\"]}')
+          print(f'Source URL: {latest[\"sourceUrl\"]}')
+          print(f'Checksum: {latest[\"checksum\"]}')
+          "

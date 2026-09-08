@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>File Manager</title>
+</head>
+<body>
+<div id="fileManagerPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-button,emby-input,emby-checkbox">
+
+    <div data-role="content">
+        <div class="content-primary">
+
+            <h2>File Manager</h2>
+            <p class="fieldDescription">
+                Administrador de archivos del servidor. Todos los endpoints requieren una cuenta administradora.
+                En modo de acceso completo puede usar todo el sistema de archivos que el proceso de Jellyfin puede ver.
+            </p>
+
+            <details style="margin:1.5em 0;">
+                <summary style="cursor:pointer;font-weight:600;">Configuración y seguridad</summary>
+
+                <form id="fmConfigForm" style="margin-top:1em;">
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="fmFullAccess" type="checkbox" is="emby-checkbox">
+                            <span>Acceso completo al sistema de archivos visible para Jellyfin</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Activado: permite navegar y operar en cualquier ruta a la que el proceso de Jellyfin tenga acceso.
+                            En Docker solo incluye las rutas montadas dentro del contenedor.
+                        </div>
+                    </div>
+
+                    <div id="fmRestrictedRoots">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="fmAllowedRoots">
+                            Raíces permitidas (solo para modo restringido)
+                        </label>
+                        <textarea id="fmAllowedRoots"
+                                  is="emby-input"
+                                  rows="6"
+                                  placeholder="/media/movies&#10;/media/series&#10;/media/karaoke"></textarea>
+                        <div class="fieldDescription">
+                            Una ruta absoluta por línea. Esta lista solo se usa cuando el acceso completo está desactivado.
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="fmAllowUpload" type="checkbox" is="emby-checkbox">
+                            <span>Permitir subida de archivos</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="fmAllowCopy" type="checkbox" is="emby-checkbox">
+                            <span>Permitir copiar archivos y carpetas</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="fmAllowDelete" type="checkbox" is="emby-checkbox">
+                            <span>Permitir eliminación</span>
+                        </label>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="fmMaxUpload">
+                            Máximo por archivo (MB)
+                        </label>
+                        <input id="fmMaxUpload" type="number" min="0" step="1" is="emby-input">
+                        <div class="fieldDescription">0 = sin límite impuesto por el plugin.</div>
+                    </div>
+
+                    <button is="emby-button"
+                            type="submit"
+                            class="raised button-submit block emby-button">
+                        <span>Guardar configuración</span>
+                    </button>
+                </form>
+            </details>
+
+            <div class="inputContainer">
+                <label class="inputLabel inputLabelUnfocused" for="fmRootSelect">Raíz</label>
+                <select id="fmRootSelect" is="emby-input"></select>
+            </div>
+
+            <div class="inputContainer">
+                <label class="inputLabel inputLabelUnfocused" for="fmPath">Ruta actual</label>
+                <div style="display:flex;gap:.5em;align-items:center;">
+                    <input id="fmPath" type="text" is="emby-input" style="flex:1;">
+                    <button id="fmGo" type="button" is="emby-button" class="raised emby-button">Ir</button>
+                </div>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:.5em;margin:1em 0;">
+                <button id="fmUp" type="button" is="emby-button" class="raised emby-button">⬆ Subir</button>
+                <button id="fmRefresh" type="button" is="emby-button" class="raised emby-button">↻ Actualizar</button>
+                <button id="fmNewFolder" type="button" is="emby-button" class="raised emby-button">＋ Carpeta</button>
+                <button id="fmUploadBtn" type="button" is="emby-button" class="raised emby-button">⤒ Subir archivo</button>
+                <input id="fmUploadInput" type="file" multiple hidden>
+            </div>
+
+            <div id="fmStatus" class="fieldDescription" style="margin:.75em 0;"></div>
+
+            <div style="overflow:auto;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                    <tr>
+                        <th style="text-align:left;padding:.7em;">Nombre</th>
+                        <th style="text-align:right;padding:.7em;">Tamaño</th>
+                        <th style="text-align:left;padding:.7em;">Modificado</th>
+                        <th style="text-align:right;padding:.7em;">Acciones</th>
+                    </tr>
+                    </thead>
+                    <tbody id="fmRows"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+<script>
+(function () {
+    'use strict';
+
+    const PLUGIN_ID = 'f4217828-0ed8-4d2e-a3cd-6dc74806f716';
+    const page = document.getElementById('fileManagerPage');
+    let currentPath = '';
+    let parentPath = null;
+    let loadedOnce = false;
+
+    const $ = (selector) => page.querySelector(selector);
+
+    function apiUrl(path, params) {
+        return ApiClient.getUrl(path, params || {});
+    }
+
+    async function apiJson(path, params) {
+        return ApiClient.getJSON(apiUrl(path, params));
+    }
+
+    async function apiWrite(path, method, body, params) {
+        return ApiClient.ajax({
+            url: apiUrl(path, params),
+            type: method,
+            data: body === undefined ? undefined : JSON.stringify(body),
+            contentType: body === undefined ? undefined : 'application/json',
+            dataType: 'json'
+        });
+    }
+
+    function setStatus(message, error) {
+        const el = $('#fmStatus');
+        el.textContent = message || '';
+        el.style.fontWeight = message ? '600' : '';
+        el.style.opacity = error ? '1' : '.85';
+    }
+
+    function humanSize(bytes) {
+        if (bytes === null || bytes === undefined) return '—';
+        if (bytes < 1024) return bytes + ' B';
+        const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+        let value = bytes / 1024;
+        let index = 0;
+        while (value >= 1024 && index < units.length - 1) {
+            value /= 1024;
+            index++;
+        }
+        return value.toFixed(value >= 10 ? 1 : 2) + ' ' + units[index];
+    }
+
+    function formatDate(value) {
+        if (!value) return '';
+        return new Date(value).toLocaleString();
+    }
+
+    function fileIcon(item) {
+        if (item.IsDirectory) return '📁';
+        const ext = (item.Extension || '').toLowerCase();
+        if (['.mkv','.mp4','.avi','.mov','.m4v','.ts','.webm'].includes(ext)) return '🎬';
+        if (['.mp3','.flac','.aac','.m4a','.wav','.ogg'].includes(ext)) return '🎵';
+        if (['.jpg','.jpeg','.png','.webp','.gif','.bmp'].includes(ext)) return '🖼️';
+        if (['.srt','.ass','.ssa','.vtt','.nfo','.txt'].includes(ext)) return '📝';
+        return '📄';
+    }
+
+    function button(text, title) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('is', 'emby-button');
+        b.className = 'emby-button';
+        b.textContent = text;
+        b.title = title;
+        b.style.marginLeft = '.25em';
+        return b;
+    }
+
+    function renderRows(items) {
+        const body = $('#fmRows');
+        body.innerHTML = '';
+
+        items.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.style.borderTop = '1px solid rgba(128,128,128,.25)';
+
+            const nameTd = document.createElement('td');
+            nameTd.style.padding = '.7em';
+            nameTd.style.minWidth = '18em';
+
+            const open = document.createElement('button');
+            open.type = 'button';
+            open.setAttribute('is', 'emby-button');
+            open.className = 'emby-button';
+            open.style.textAlign = 'left';
+            open.style.maxWidth = '100%';
+            open.textContent = fileIcon(item) + '  ' + item.Name;
+            open.title = item.Path;
+
+            if (item.IsDirectory) {
+                open.addEventListener('click', () => loadDirectory(item.Path));
+            } else {
+                open.addEventListener('click', () => downloadFile(item.Path));
+            }
+
+            nameTd.appendChild(open);
+
+            const sizeTd = document.createElement('td');
+            sizeTd.style.padding = '.7em';
+            sizeTd.style.textAlign = 'right';
+            sizeTd.textContent = humanSize(item.Size);
+
+            const dateTd = document.createElement('td');
+            dateTd.style.padding = '.7em';
+            dateTd.textContent = formatDate(item.LastModifiedUtc);
+
+            const actionsTd = document.createElement('td');
+            actionsTd.style.padding = '.7em';
+            actionsTd.style.textAlign = 'right';
+            actionsTd.style.whiteSpace = 'nowrap';
+
+            if (!item.IsDirectory) {
+                const download = button('⬇', 'Descargar');
+                download.addEventListener('click', () => downloadFile(item.Path));
+                actionsTd.appendChild(download);
+            }
+
+            const rename = button('✎', 'Renombrar');
+            rename.addEventListener('click', () => renameItem(item));
+            actionsTd.appendChild(rename);
+
+            const move = button('↪', 'Mover');
+            move.addEventListener('click', () => moveItem(item));
+            actionsTd.appendChild(move);
+
+            const copy = button('⧉', 'Copiar');
+            copy.addEventListener('click', () => copyItem(item));
+            actionsTd.appendChild(copy);
+
+            const del = button('🗑', 'Eliminar');
+            del.addEventListener('click', () => deleteItem(item));
+            actionsTd.appendChild(del);
+
+            tr.append(nameTd, sizeTd, dateTd, actionsTd);
+            body.appendChild(tr);
+        });
+    }
+
+    async function loadRoots() {
+        const roots = await apiJson('FileManager/Roots');
+        const select = $('#fmRootSelect');
+        select.innerHTML = '';
+
+        roots.forEach(root => {
+            const option = document.createElement('option');
+            option.value = root.Path;
+            option.textContent = root.Name + ' — ' + root.Path;
+            select.appendChild(option);
+        });
+
+        if (!roots.length) {
+            setStatus('Configura al menos una raíz permitida y guarda los cambios.', true);
+            $('#fmRows').innerHTML = '';
+            return;
+        }
+
+        const target = currentPath && roots.some(r => currentPath.startsWith(r.Path))
+            ? currentPath
+            : roots[0].Path;
+
+        select.value = roots.find(r => target.startsWith(r.Path))?.Path || roots[0].Path;
+        await loadDirectory(target);
+    }
+
+    async function loadDirectory(path) {
+        try {
+            Dashboard.showLoadingMsg();
+            const listing = await apiJson('FileManager/List', { path: path });
+            currentPath = listing.CurrentPath;
+            parentPath = listing.ParentPath || null;
+            $('#fmPath').value = currentPath;
+            renderRows(listing.Items || []);
+            setStatus((listing.Items || []).length + ' elemento(s)');
+        } catch (err) {
+            console.error(err);
+            setStatus('No se pudo abrir la carpeta. Revisa permisos y rutas permitidas.', true);
+        } finally {
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    async function createFolder() {
+        const name = prompt('Nombre de la nueva carpeta:');
+        if (!name) return;
+
+        try {
+            Dashboard.showLoadingMsg();
+            await apiWrite('FileManager/Folder', 'POST', { ParentPath: currentPath, Name: name });
+            await loadDirectory(currentPath);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo crear la carpeta.');
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    async function renameItem(item) {
+        const name = prompt('Nuevo nombre:', item.Name);
+        if (!name || name === item.Name) return;
+
+        try {
+            Dashboard.showLoadingMsg();
+            await apiWrite('FileManager/Rename', 'POST', { Path: item.Path, NewName: name });
+            await loadDirectory(currentPath);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo renombrar el elemento.');
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    async function moveItem(item) {
+        const destination = prompt(
+            'Carpeta de destino (ruta absoluta dentro de una raíz permitida):',
+            currentPath
+        );
+        if (!destination) return;
+
+        try {
+            Dashboard.showLoadingMsg();
+            await apiWrite('FileManager/Move', 'POST', {
+                SourcePath: item.Path,
+                DestinationDirectory: destination
+            });
+            await loadDirectory(currentPath);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo mover el elemento.');
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    async function copyItem(item) {
+        const destination = prompt(
+            'Copiar a la carpeta (ruta absoluta dentro de una raíz permitida):',
+            currentPath
+        );
+        if (!destination) return;
+
+        try {
+            Dashboard.showLoadingMsg();
+            await apiWrite('FileManager/Copy', 'POST', {
+                SourcePath: item.Path,
+                DestinationDirectory: destination
+            });
+            await loadDirectory(currentPath);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo copiar el elemento.');
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    async function deleteItem(item) {
+        const recursive = item.IsDirectory;
+        const message = item.IsDirectory
+            ? '¿Eliminar la carpeta "' + item.Name + '" y TODO su contenido?'
+            : '¿Eliminar "' + item.Name + '"?';
+
+        if (!confirm(message)) return;
+
+        try {
+            Dashboard.showLoadingMsg();
+            await apiWrite('FileManager/Delete', 'DELETE', undefined, {
+                path: item.Path,
+                recursive: recursive
+            });
+            await loadDirectory(currentPath);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo eliminar el elemento.');
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    async function uploadFiles(fileList) {
+        if (!fileList || !fileList.length) return;
+
+        const form = new FormData();
+        Array.from(fileList).forEach(file => form.append('files', file, file.name));
+
+        try {
+            Dashboard.showLoadingMsg();
+
+            const headers = typeof ApiClient.getDefaultHeaders === 'function'
+                ? ApiClient.getDefaultHeaders()
+                : {};
+
+            // Let the browser set multipart/form-data + boundary.
+            delete headers['Content-Type'];
+            delete headers['content-type'];
+
+            const response = await fetch(apiUrl('FileManager/Upload', {
+                destinationDirectory: currentPath,
+                overwrite: false
+            }), {
+                method: 'POST',
+                headers: headers,
+                body: form
+            });
+
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+
+            await loadDirectory(currentPath);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudieron subir los archivos.');
+            Dashboard.hideLoadingMsg();
+        } finally {
+            $('#fmUploadInput').value = '';
+        }
+    }
+
+    async function downloadFile(path) {
+        try {
+            Dashboard.showLoadingMsg();
+
+            const headers = typeof ApiClient.getDefaultHeaders === 'function'
+                ? ApiClient.getDefaultHeaders()
+                : {};
+
+            const response = await fetch(apiUrl('FileManager/Download', { path: path }), {
+                method: 'GET',
+                headers: headers
+            });
+
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = path.split(/[\\/]/).pop();
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo descargar el archivo.');
+        } finally {
+            Dashboard.hideLoadingMsg();
+        }
+    }
+
+    function updateAccessModeUi() {
+        const restricted = $('#fmRestrictedRoots');
+        if (restricted) {
+            restricted.style.display = $('#fmFullAccess').checked ? 'none' : '';
+        }
+    }
+
+    async function loadConfig() {
+        const config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
+        $('#fmFullAccess').checked = config.FullFileSystemAccess !== false;
+        $('#fmAllowedRoots').value = config.AllowedRoots || '';
+        updateAccessModeUi();
+        $('#fmAllowUpload').checked = config.AllowUpload !== false;
+        $('#fmAllowCopy').checked = config.AllowCopy !== false;
+        $('#fmAllowDelete').checked = config.AllowDelete !== false;
+        $('#fmMaxUpload').value = config.MaxUploadMegabytes ?? 2048;
+    }
+
+    async function saveConfig(event) {
+        event.preventDefault();
+        Dashboard.showLoadingMsg();
+
+        try {
+            const config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
+            config.FullFileSystemAccess = $('#fmFullAccess').checked;
+            config.AllowedRoots = $('#fmAllowedRoots').value.trim();
+            config.AllowUpload = $('#fmAllowUpload').checked;
+            config.AllowCopy = $('#fmAllowCopy').checked;
+            config.AllowDelete = $('#fmAllowDelete').checked;
+            config.MaxUploadMegabytes = Math.max(0, parseInt($('#fmMaxUpload').value || '0', 10));
+
+            const result = await ApiClient.updatePluginConfiguration(PLUGIN_ID, config);
+            Dashboard.processPluginConfigurationUpdateResult(result);
+            currentPath = '';
+            await loadRoots();
+        } catch (err) {
+            console.error(err);
+            Dashboard.hideLoadingMsg();
+            alert('No se pudo guardar la configuración.');
+        }
+    }
+
+    async function initialize() {
+        if (loadedOnce) return;
+        loadedOnce = true;
+
+        try {
+            await loadConfig();
+            await loadRoots();
+        } catch (err) {
+            console.error(err);
+            setStatus('No se pudo inicializar File Manager.', true);
+        }
+    }
+
+    $('#fmConfigForm').addEventListener('submit', saveConfig);
+    $('#fmFullAccess').addEventListener('change', updateAccessModeUi);
+    $('#fmRootSelect').addEventListener('change', e => loadDirectory(e.target.value));
+    $('#fmGo').addEventListener('click', () => loadDirectory($('#fmPath').value));
+    $('#fmPath').addEventListener('keydown', e => {
+        if (e.key === 'Enter') loadDirectory($('#fmPath').value);
+    });
+    $('#fmUp').addEventListener('click', () => {
+        if (parentPath) loadDirectory(parentPath);
+    });
+    $('#fmRefresh').addEventListener('click', () => currentPath && loadDirectory(currentPath));
+    $('#fmNewFolder').addEventListener('click', createFolder);
+    $('#fmUploadBtn').addEventListener('click', () => $('#fmUploadInput').click());
+    $('#fmUploadInput').addEventListener('change', e => uploadFiles(e.target.files));
+
+    page.addEventListener('pageshow', initialize);
+    initialize();
+})();
+</script>
+</div>
+</body>
+</html>

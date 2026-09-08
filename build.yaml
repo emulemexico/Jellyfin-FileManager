@@ -1,0 +1,15 @@
+﻿---
+name: "File Manager"
+guid: "f4217828-0ed8-4d2e-a3cd-6dc74806f716"
+version: "10.11.0.2"
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+owner: "emulemexico"
+overview: "Administra los archivos de tu servidor directamente desde Jellyfin."
+description: >
+  Administrador de archivos integrado al Dashboard de Jellyfin que permite navegar, copiar, mover, renombrar, subir, descargar y eliminar archivos.
+category: "General"
+artifacts:
+  - "Jellyfin.Plugin.FileManager.dll"
+changelog: >
+  Primera versión pública con acceso completo al filesystem visible para Jellyfin.
