@@ -149,18 +149,17 @@ git push origin "v$Version"
 Write-Host "Creando GitHub Release v$Version..."
 gh release create "v$Version" $zipPath --title "File Manager $Version" --notes "$Changelog"
 
-# 13. Verificar URL remota del asset
+# 13. Verificar Release y Asset en GitHub
 Write-Host "Verificando disponibilidad del asset en GitHub..."
-Start-Sleep -Seconds 3
 try {
-    $resp = Invoke-WebRequest -Uri $sourceUrl -Method Head -MaximumRedirection 5 -TimeoutSec 5 -UserAgent "PowerShell-ReleaseCheck" -ErrorAction Stop
-    if ($resp.StatusCode -eq 200) {
-        Write-Host "Verificación exitosa: $sourceUrl responde HTTP 200." -ForegroundColor Green
+    $relCheck = gh release view "v$Version" --json assets --jq ".assets[].name"
+    if ($relCheck -match [regex]::Escape($zipName)) {
+        Write-Host "Verificación exitosa: Asset '$zipName' publicado en GitHub Release v$Version." -ForegroundColor Green
     } else {
-        Write-Host "Advertencia: Status $($resp.StatusCode) en $sourceUrl" -ForegroundColor Yellow
+        Write-Host "Advertencia: No se encontró el asset en la respuesta de GitHub CLI." -ForegroundColor Yellow
     }
 } catch {
-    Write-Host "Nota: El asset puede tardar unos segundos en propagarse en CDN: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "Nota: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 Write-Host "¡Release $Version completado con éxito!" -ForegroundColor Green
