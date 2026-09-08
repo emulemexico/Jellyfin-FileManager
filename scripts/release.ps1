@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
     [string]$Changelog = "Release $Version"
@@ -122,8 +122,8 @@ $existingVersions = @($pluginEntry.versions | Where-Object { $_.version -ne $Ver
 $pluginEntry.versions = @($newVersionObj) + $existingVersions
 $pluginEntry.owner = $owner
 
-$updatedJson = $manifestJson | ConvertTo-Json -Depth 10
-Set-Content -Path $manifestPath -Value $updatedJson -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($manifestPath, $updatedJson, $utf8NoBom)
 
 # Validar manifest.json
 Get-Content $manifestPath -Raw | ConvertFrom-Json | Out-Null
